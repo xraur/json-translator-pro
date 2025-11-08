@@ -2094,8 +2094,28 @@ Translated JSON:
                 temperature=TRANSLATION_TEMPERATURE,
                 max_tokens=MAX_TOKENS_PER_REQUEST,
             )
+
+            # 🔹 AICI ACTUALIZĂM TOKENII REALI
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                # Compatibil atât cu prompt/completion_tokens, cât și input/output_tokens
+                prompt_tokens = getattr(
+                    usage,
+                    "prompt_tokens",
+                    getattr(usage, "input_tokens", 0) or 0
+                )
+                completion_tokens = getattr(
+                    usage,
+                    "completion_tokens",
+                    getattr(usage, "output_tokens", 0) or 0
+                )
+
+                self.total_prompt_tokens += prompt_tokens
+                self.total_completion_tokens += completion_tokens
+
             content = response.choices[0].message.content.strip()
             return self._clean_json_response(content)
+
 
         # STEP 2: Try up to 2 times to get valid JSON
         parsed, raw = {}, ""

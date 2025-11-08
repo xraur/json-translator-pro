@@ -1,0 +1,117 @@
+# ===========================================
+# 🔒 Sensitive files
+# ===========================================
+.api_key
+.env
+*.key
+*.pem
+
+# ===========================================
+# 🧠 Python cache / compiled files
+# ===========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ===========================================
+# 🧱 Virtual environments
+# ===========================================
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+
+# ===========================================
+# 📦 Build & distribution folders
+# ===========================================
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+wheels/
+share/python-wheels/
+pip-wheel-metadata/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ===========================================
+# ⚙️ PyInstaller / cx_Freeze / Nuitka
+# ===========================================
+*.spec
+*.manifest
+*.dll
+*.so
+*.dylib
+*.pkg
+*.app
+*.exe
+
+# ===========================================
+# 🧰 IDE / Editor files
+# ===========================================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# ===========================================
+# 🧾 Logs / temporary / backup
+# ===========================================
+*.log
+*.bak
+*.tmp
+*.swp
+*.old
+*.orig
+*.save
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.rar
+
+# ===========================================
+# 🧩 Project-specific files
+# ===========================================
+*_translated_*.json
+lang/__backup__/
+test/
+tests/
+output/
+cache/
+__output__/
+
+# ===========================================
+# 🌐 Notebooks / AI temp
+# ===========================================
+*.ipynb_checkpoints
+*.pt
+*.pth
+*.onnx
+*.ckpt
+
+# ===========================================
+# 🪄 Other ignore examples
+# ===========================================
+.tox/
+coverage/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+pytest_cache/
+.pytest_cache/
+*.cover
+*.coverage
+.cache/
+.cache/

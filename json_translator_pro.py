@@ -1,6 +1,5 @@
 """
 JSON Translator Pro - Multilingual Edition
-Smart JSON translation with multi-language UI support
 UI translations loaded from lang/ folder
 
 Author: Raul, ChatGPT (OpenAI), and Claude (Anthropic)
@@ -171,6 +170,49 @@ class LanguageManager:
 class JSONTranslatorGUI:
     """Main GUI application for JSON translation."""
 
+        # ========================================================================
+    # PROTECTIVE HELPERS (placeholders, HTML, URLs, mentions, etc.)
+    # ========================================================================
+
+    def _protect_placeholders(self, text: str) -> Tuple[str, Dict[str, str]]:
+        """
+        Replace placeholders, HTML tags, URLs, mentions, hashtags and emoji codes
+        with safe tokens so GPT won't touch them.
+        """
+        import re
+        protected = {}
+        protected_text = str(text)
+        token_index = 0
+
+        # Regex patterns for everything that must NEVER be translated
+        patterns = {
+            "curly":      r"\{[^}]+\}",           # {variable}
+            "square":     r"\[[^\]]+\]",          # [name], [count]
+            "percent":    r"%\w",                 # %s, %d, etc.
+            "html":       r"<[^>]+>",             # <a href="...">
+            "url":        r"https?://[^\s\"']+",  # https://example.com
+            "mention":    r"@\w+",                # @username
+            "hashtag":    r"#\w+",                # #topic
+            "emoji_code": r":[a-zA-Z0-9_]+:",     # :smile:
+            "caps":       r"\b[A-Z]{2,5}\b"       # API, JSON, CSS, etc.
+        }
+
+        for label, pattern in patterns.items():
+            for match in re.findall(pattern, protected_text):
+                token = f"__P{token_index}__"
+                protected[token] = match
+                protected_text = protected_text.replace(match, token)
+                token_index += 1
+
+        return protected_text, protected
+
+    def _restore_placeholders(self, text: str, protected: Dict[str, str]) -> str:
+        """Restore original placeholders and tags from safe tokens."""
+        for token, original in protected.items():
+            text = text.replace(token, original)
+        return text
+
+
     def __init__(self, root: tk.Tk):
         """
         Initialize the application.
@@ -207,9 +249,20 @@ class JSONTranslatorGUI:
 
         # Language choices
         self.language_choices = [
-            "English", "Romanian", "Spanish", "French", "German",
-            "Italian", "Portuguese", "Polish", "Turkish", "Dutch"
+            "English", "Romanian", "Spanish", "French", "German", "Italian",
+            "Portuguese", "Polish", "Turkish", "Dutch", "Russian", "Ukrainian",
+            "Czech", "Slovak", "Hungarian", "Bulgarian", "Serbian", "Croatian",
+            "Bosnian", "Greek", "Swedish", "Norwegian", "Finnish", "Danish",
+            "Estonian", "Latvian", "Lithuanian", "Arabic", "Hebrew", "Persian",
+            "Hindi", "Urdu", "Bengali", "Tamil", "Telugu", "Malayalam", "Indonesian",
+            "Malay", "Thai", "Vietnamese", "Chinese (Simplified)", "Chinese (Traditional)",
+            "Japanese", "Korean", "Filipino", "Swahili", "Afrikaans", "Amharic",
+            "Esperanto", "Catalan", "Galician", "Basque", "Armenian", "Georgian",
+            "Albanian", "Macedonian", "Slovenian", "Icelandic", "Irish", "Welsh",
+            "Scottish Gaelic", "Haitian Creole", "Tagalog", "Somali", "Nepali",
+            "Pashto", "Kazakh", "Mongolian", "Khmer", "Lao", "Burmese"
         ]
+
 
         # UI components (will be initialized in setup_ui)
         self.left_panel: Optional[tk.Frame] = None
@@ -864,23 +917,26 @@ class JSONTranslatorGUI:
 
     def refresh_ui(self) -> None:
         """Refresh all UI elements with new language strings."""
+        # Titrele ferestrei în noua limbă
         self.root.title(self.lang_manager.get("app_title"))
 
-        # Clear and rebuild panels
-        for widget in self.left_panel.winfo_children():
-            widget.destroy()
-        for widget in self.right_panel.winfo_children():
-            widget.destroy()
-        for widget in self.bottom_panel.winfo_children():
+        # Ștergem TOȚI copiii ferestrei (header + main + bottom)
+        for widget in self.root.winfo_children():
             widget.destroy()
 
-        self.setup_left_panel(self.left_panel)
-        self.setup_right_panel(self.right_panel)
-        self.setup_bottom_panel(self.bottom_panel)
+        # Reconstruim UI-ul complet
+        self._create_header()
+        self._create_main_panels()
+        self._create_bottom_panel()
 
-        # Redisplay analysis if it exists
+        # Ne asigurăm că în combobox e setată limba curentă
+        if self.lang_combo is not None:
+            self.lang_combo.set(self.ui_lang.get())
+
+        # Dacă avem deja o analiză făcută, o reafișăm în noul UI
         if self.analysis_result:
             self.display_analysis(self.analysis_result)
+
 
     # ========================================================================
     # API KEY MANAGEMENT
@@ -1987,63 +2043,83 @@ class JSONTranslatorGUI:
                 self._update_batch_progress(idx, len(batches), keys, result, prog)
             )
 
-    def _translate_batch(
-        self,
-        client: OpenAI, # type: ignore
-        batch_keys: List[str],
-        source: str,
-        target: str
-    ) -> Dict[str, str]:
-        """Translate a single batch of keys."""
-        batch_dict = {
-            k: self.analysis_result["new_data"][k]
-            for k in batch_keys
-        }
-        json_chunk = json.dumps(batch_dict, ensure_ascii=False)
+    def _translate_batch(self, client, batch_keys, source, target) -> Dict[str, str]:
+        """Translate a batch safely (with placeholder protection & retry)."""
+        batch_dict = {k: self.analysis_result["new_data"][k] for k in batch_keys}
 
-        user_prompt = f"""Translate ALL values in the JSON object below from {source} to {target}. This is for a social network website.
+        # STEP 1: Protect placeholders
+        protected_batches = {}
+        protected_data = {}
+        for key, value in batch_dict.items():
+            safe_value, placeholders = self._protect_placeholders(str(value))
+            protected_batches[key] = safe_value
+            protected_data[key] = placeholders
 
-RULES:
-1. Translate naturally and fluently
-2. Keep ALL placeholders: [number], [name], {{variable}}, etc.
-3. Keep ALL HTML tags and attributes: <a href="...">, </a>, etc.
-4. Keep URLs unchanged: https://..., www...
-5. Keep escaped characters: \\\", \\\\, etc.
-6. Do NOT change the keys, only the values.
-7. Return ONLY a valid JSON object, with the same keys.
+        json_chunk = json.dumps(protected_batches, ensure_ascii=False, indent=2)
+
+        system_prompt = (
+            "You are a professional AI translator specialized in precise, grammatically correct, and context-aware localization of structured data such as JSON. "
+            "Translate only the text values into the target language, ensuring the result sounds natural, clear, and idiomatic for native speakers. "
+            "Always use correct grammar, punctuation, and full word forms in the target language, following official linguistic standards and spelling conventions (for example, if the language uses diacritics or hyphenation, apply them correctly). "
+            "Adapt sentence structure and phrasing to what is natural for the target language, maintaining fluency and readability rather than literal word-by-word translation. "
+            "Ensure a professional, human-like tone suitable for user interfaces, notifications, and documentation. "
+            "Do not translate or modify placeholders, variables, numbers, code fragments, HTML tags, or URLs. "
+            "Preserve the exact JSON structure and return only the translated JSON object with no explanations or extra text. "
+            "Prioritize translation meanings appropriate for user interfaces, system messages, and software contexts, rather than generic or abstract interpretations. "
+            "Reorder short noun phrases only when it improves natural word order in the target language, without altering full sentences or breaking grammatical correctness."
+            "Apply correct prepositions and articles between nouns according to the grammar of the target language, ensuring natural phrasing when such connectors are required."
+        )
+
+
+
+        user_prompt = f"""
+Translate ALL values from {source} to {target}.
+Keep placeholders ({{variable}}, [name], %s, etc.), HTML tags, and URLs unchanged.
+Do NOT translate tokens like __P0__, __P1__, etc.
+Return ONLY a valid JSON object with the same keys.
 
 JSON:
 {json_chunk}
 
-Translated JSON:"""
+Translated JSON:
+"""
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a professional translator for social networks. Translate naturally while preserving all technical elements. Respond with ONLY the translated JSON object.",
-                },
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=TRANSLATION_TEMPERATURE,
-            max_tokens=MAX_TOKENS_PER_REQUEST,
-        )
+        def _try_request():
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=TRANSLATION_TEMPERATURE,
+                max_tokens=MAX_TOKENS_PER_REQUEST,
+            )
+            content = response.choices[0].message.content.strip()
+            return self._clean_json_response(content)
 
-        # Track token usage
-        usage = getattr(response, "usage", None)
-        if usage is not None:
-            self.total_prompt_tokens += getattr(usage, "prompt_tokens", 0)
-            self.total_completion_tokens += getattr(usage, "completion_tokens", 0)
+        # STEP 2: Try up to 2 times to get valid JSON
+        parsed, raw = {}, ""
+        for attempt in range(2):
+            raw = _try_request()
+            try:
+                parsed = json.loads(raw)
+                break
+            except Exception:
+                parsed = {}
+                continue
 
-        # Parse response
-        content = response.choices[0].message.content.strip()
-        content = self._clean_json_response(content)
+        # STEP 3: Restore placeholders
+        result = {}
+        for key, original_value in batch_dict.items():
+            translated_value = parsed.get(key) if isinstance(parsed, dict) else None
+            if not isinstance(translated_value, str) or not translated_value.strip():
+                translated_value = original_value  # fallback
 
-        try:
-            return json.loads(content)
-        except Exception:
-            return {}
+            translated_value = self._restore_placeholders(translated_value, protected_data[key])
+            result[key] = translated_value
+
+        return result
+
 
     @staticmethod
     def _clean_json_response(content: str) -> str:

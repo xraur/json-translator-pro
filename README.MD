@@ -13,6 +13,11 @@ you can buy me a coffee or send a tip via Revolut 👇
 
 ---
 
+![JSON Translator Pro Screenshot](assets/screenshot.png)
+
+---
+
+
 ## ✨ Features
 
 - 🔁 Compare **OLD** and **NEW** JSON files by keys  
